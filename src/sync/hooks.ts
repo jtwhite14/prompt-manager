@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useCallback, useRef } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useStore, selectActivePrompts, selectActiveGroups } from './store'
 import { initSyncEngine, getSyncEngine } from './engine'
 import type { SyncEngineConfig, SyncEngineEvents, SyncStatus } from './types'
@@ -77,7 +78,7 @@ export function useSyncEngine(
  * Subscribe to sync state changes
  */
 export function useSyncState() {
-  return useStore((state) => state.syncState)
+  return useStore(useShallow((state) => state.syncState))
 }
 
 /**
@@ -98,7 +99,7 @@ export function useHasPendingMutations(): boolean {
  * Get all active prompts (non-deleted)
  */
 export function usePrompts() {
-  return useStore(selectActivePrompts)
+  return useStore(useShallow(selectActivePrompts))
 }
 
 /**
@@ -115,7 +116,7 @@ export function usePrompt(id: string) {
  * Get all active groups (non-deleted)
  */
 export function useGroups() {
-  return useStore(selectActiveGroups)
+  return useStore(useShallow(selectActiveGroups))
 }
 
 /**
