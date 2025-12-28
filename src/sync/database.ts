@@ -78,19 +78,21 @@ export class PromptManagerDB extends Dexie {
   /**
    * Get sync metadata
    */
-  async getSyncMetadata(): Promise<SyncMetadata | undefined> {
-    return this.syncMetadata.get('sync_metadata')
+  async getSyncMetadata(): Promise<SyncMetadata | null> {
+    const metadata = await this.syncMetadata.get('sync_metadata')
+    return metadata ?? null
   }
 
   /**
-   * Update sync metadata
+   * Update sync metadata (merges with existing)
    */
   async updateSyncMetadata(data: Partial<SyncMetadata>): Promise<void> {
+    const existing = await this.syncMetadata.get('sync_metadata')
     await this.syncMetadata.put({
       id: 'sync_metadata',
-      lastSyncId: data.lastSyncId ?? 0,
-      lastSyncedAt: data.lastSyncedAt ?? null,
-      clientId: data.clientId ?? crypto.randomUUID(),
+      lastSyncId: data.lastSyncId ?? existing?.lastSyncId ?? 0,
+      lastSyncedAt: data.lastSyncedAt ?? existing?.lastSyncedAt ?? null,
+      clientId: data.clientId ?? existing?.clientId ?? crypto.randomUUID(),
     })
   }
 
