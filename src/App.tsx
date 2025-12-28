@@ -4,9 +4,20 @@ import { SignUp } from "@/pages/SignUp"
 import { Home } from "@/pages/Home"
 import { PromptEditor } from "@/pages/PromptEditor"
 import { PromptView } from "@/pages/PromptView"
+import { SyncStatusIndicator } from "@/components/SyncStatusIndicator"
+import {
+  useSyncEngine,
+  usePrompts,
+  useGroups,
+  usePromptActions,
+  useGroupActions,
+  useStore,
+} from "@/sync"
+import type { PromptEntity, GroupEntity, PromptVersionEntity } from "@/sync"
 
 type Page = "login" | "signup" | "home" | "prompt-editor" | "view-prompt"
 
+// Legacy interfaces for compatibility with existing components
 export interface Group {
   id: string
   name: string
@@ -33,137 +44,79 @@ export interface Prompt {
   versions: PromptVersion[]
 }
 
-const INITIAL_GROUPS: Group[] = [
-  { id: "1", name: "Work", promptCount: 2, color: "bg-blue-500" },
-  { id: "2", name: "Personal", promptCount: 1, color: "bg-green-500" },
-  { id: "3", name: "Development", promptCount: 1, color: "bg-purple-500" },
-]
+// Convert sync entities to legacy format for existing components
+function toGroup(entity: GroupEntity, promptCount: number): Group {
+  return {
+    id: entity.id,
+    name: entity.name,
+    color: entity.color,
+    promptCount,
+  }
+}
 
-const INITIAL_PROMPTS: Prompt[] = [
-  {
-    id: "1",
-    title: "Code Review Assistant",
-    content: "You are a senior software engineer conducting a code review. Analyze the following code for bugs, performance issues, security vulnerabilities, and adherence to best practices. Provide specific, actionable feedback.",
-    category: "Development",
-    createdAt: "Dec 20, 2024",
-    updatedAt: "2 hours ago",
-    isFavorite: true,
-    groupId: "3",
-    versions: [
-      {
-        id: "v3",
-        content: "You are a senior software engineer conducting a code review. Analyze the following code for bugs, performance issues, security vulnerabilities, and adherence to best practices. Provide specific, actionable feedback.",
-        createdAt: "2 hours ago",
-        note: "Added security review"
-      },
-      {
-        id: "v2",
-        content: "You are a senior software engineer conducting a code review. Analyze the following code for bugs, performance issues, and adherence to best practices. Provide specific, actionable feedback.",
-        createdAt: "Dec 22, 2024",
-        note: "Improved specificity"
-      },
-      {
-        id: "v1",
-        content: "You are a code reviewer. Review the following code and provide feedback.",
-        createdAt: "Dec 20, 2024",
-        note: "Initial version"
-      },
-    ]
-  },
-  {
-    id: "2",
-    title: "Creative Writing Partner",
-    content: "You are a creative writing assistant specializing in storytelling. Help me develop compelling narratives with rich characters, engaging plots, and vivid descriptions. Ask clarifying questions to understand my vision.",
-    category: "Writing",
-    createdAt: "Dec 18, 2024",
-    updatedAt: "Yesterday",
-    isFavorite: false,
-    groupId: "2",
-    versions: [
-      {
-        id: "v1",
-        content: "You are a creative writing assistant specializing in storytelling. Help me develop compelling narratives with rich characters, engaging plots, and vivid descriptions. Ask clarifying questions to understand my vision.",
-        createdAt: "Dec 18, 2024",
-        note: "Initial version"
-      },
-    ]
-  },
-  {
-    id: "3",
-    title: "Data Analysis Expert",
-    content: "You are a data analyst with expertise in statistical analysis and visualization. Help me interpret datasets, identify trends, and create meaningful insights. Explain complex concepts in simple terms.",
-    category: "Analytics",
-    createdAt: "Dec 15, 2024",
-    updatedAt: "3 days ago",
-    isFavorite: true,
-    groupId: "1",
-    versions: [
-      {
-        id: "v2",
-        content: "You are a data analyst with expertise in statistical analysis and visualization. Help me interpret datasets, identify trends, and create meaningful insights. Explain complex concepts in simple terms.",
-        createdAt: "3 days ago",
-        note: "Added visualization expertise"
-      },
-      {
-        id: "v1",
-        content: "You are a data analyst. Help me interpret datasets and identify trends.",
-        createdAt: "Dec 15, 2024",
-        note: "Initial version"
-      },
-    ]
-  },
-  {
-    id: "4",
-    title: "Meeting Summarizer",
-    content: "Summarize the following meeting transcript into key points, action items, and decisions made. Format the output with clear sections and bullet points for easy scanning.",
-    category: "Productivity",
-    createdAt: "Dec 10, 2024",
-    updatedAt: "1 week ago",
-    isFavorite: false,
-    groupId: "1",
-    versions: [
-      {
-        id: "v1",
-        content: "Summarize the following meeting transcript into key points, action items, and decisions made. Format the output with clear sections and bullet points for easy scanning.",
-        createdAt: "Dec 10, 2024",
-        note: "Initial version"
-      },
-    ]
-  },
-  {
-    id: "5",
-    title: "Email Draft Assistant",
-    content: "Help me write professional emails that are clear, concise, and appropriate for the context. Match the tone to the recipient and purpose. Suggest improvements for clarity and impact.",
-    category: "Communication",
-    createdAt: "Dec 10, 2024",
-    updatedAt: "1 week ago",
-    isFavorite: true,
-    versions: [
-      {
-        id: "v1",
-        content: "Help me write professional emails that are clear, concise, and appropriate for the context. Match the tone to the recipient and purpose. Suggest improvements for clarity and impact.",
-        createdAt: "Dec 10, 2024",
-        note: "Initial version"
-      },
-    ]
-  },
-]
+function toPrompt(entity: PromptEntity, versions: PromptVersionEntity[]): Prompt {
+  return {
+    id: entity.id,
+    title: entity.title,
+    content: entity.content,
+    category: entity.category,
+    createdAt: new Date(entity.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    updatedAt: formatRelativeTime(entity.updatedAt),
+    isFavorite: entity.isFavorite,
+    groupId: entity.groupId,
+    versions: versions.map(v => ({
+      id: v.id,
+      content: v.content,
+      createdAt: formatRelativeTime(v.createdAt),
+      note: v.note,
+    })),
+  }
+}
 
-function App() {
-  const [page, setPage] = useState<Page>("login")
+function formatRelativeTime(isoDate: string): string {
+  const date = new Date(isoDate)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
+
+  if (diffMins < 1) return "Just now"
+  if (diffMins < 60) return `${diffMins} minutes ago`
+  if (diffHours < 24) return `${diffHours} hours ago`
+  if (diffDays === 1) return "Yesterday"
+  if (diffDays < 7) return `${diffDays} days ago`
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function AppContent() {
+  const [page, setPage] = useState<Page>("home") // Start at home since we're using local-first
   const [userName] = useState("John Doe")
-  const [prompts, setPrompts] = useState<Prompt[]>(INITIAL_PROMPTS)
-  const [groups, setGroups] = useState<Group[]>(INITIAL_GROUPS)
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null)
   const [editingPromptId, setEditingPromptId] = useState<string | null>(null)
 
-  const handleLogin = () => {
-    setPage("home")
-  }
+  // Get data from sync store
+  const promptEntities = usePrompts()
+  const groupEntities = useGroups()
+  const { createPrompt, updatePrompt, deletePrompt } = usePromptActions()
+  const { createGroup, updateGroup, deleteGroup } = useGroupActions()
+  const createPromptVersion = useStore((state) => state.createPromptVersion)
 
-  const handleSignUp = () => {
-    setPage("home")
-  }
+  // Get versions for prompts (we need to call this per-prompt)
+  const allVersions = useStore((state) => state.promptVersions)
+
+  // Convert to legacy format
+  const prompts: Prompt[] = promptEntities.map((p: PromptEntity) => {
+    const versions = Array.from(allVersions.values())
+      .filter((v: PromptVersionEntity) => v.promptId === p.id && !v.isDeleted)
+      .sort((a: PromptVersionEntity, b: PromptVersionEntity) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    return toPrompt(p, versions)
+  })
+
+  const groups: Group[] = groupEntities.map((g: GroupEntity) => {
+    const count = promptEntities.filter((p: PromptEntity) => p.groupId === g.id).length
+    return toGroup(g, count)
+  })
 
   const handleLogout = () => {
     setPage("login")
@@ -185,151 +138,111 @@ function App() {
   }
 
   const handleSavePrompt = (prompt: { title: string; content: string; groupId?: string }, versionNote?: string) => {
-    const now = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-
     if (editingPromptId) {
       // Editing existing prompt
-      handleUpdatePrompt(editingPromptId, prompt, versionNote)
+      const existing = promptEntities.find((p: PromptEntity) => p.id === editingPromptId)
+      if (existing) {
+        updatePrompt(editingPromptId, {
+          title: prompt.title,
+          content: prompt.content,
+          groupId: prompt.groupId,
+        })
+
+        // Create a version if content changed
+        if (prompt.content !== existing.content) {
+          createPromptVersion({
+            promptId: editingPromptId,
+            content: prompt.content,
+            note: versionNote || "Updated",
+          })
+        }
+      }
       setEditingPromptId(null)
       setSelectedPromptId(editingPromptId)
       setPage("view-prompt")
     } else {
       // Creating new prompt
-      const newPrompt: Prompt = {
-        id: Date.now().toString(),
+      const newPrompt = createPrompt({
         title: prompt.title,
         content: prompt.content,
         category: "General",
-        createdAt: now,
-        updatedAt: "Just now",
         isFavorite: false,
         groupId: prompt.groupId,
-        versions: [
-          {
-            id: "v1",
-            content: prompt.content,
-            createdAt: now,
-            note: "Initial version"
-          }
-        ]
-      }
-      setPrompts((prev) => [newPrompt, ...prev])
+      })
+
+      // Create initial version
+      createPromptVersion({
+        promptId: newPrompt.id,
+        content: prompt.content,
+        note: "Initial version",
+      })
+
       setPage("home")
     }
   }
 
-  const handleUpdatePrompt = (promptId: string, updates: { title?: string; content?: string; groupId?: string }, versionNote?: string) => {
-    setPrompts((prev) =>
-      prev.map((p) => {
-        if (p.id !== promptId) return p
-
-        const newVersions = [...p.versions]
-        if (updates.content && updates.content !== p.content) {
-          newVersions.unshift({
-            id: `v${newVersions.length + 1}`,
-            content: updates.content,
-            createdAt: "Just now",
-            note: versionNote || "Updated"
-          })
-        }
-
-        return {
-          ...p,
-          ...updates,
-          updatedAt: "Just now",
-          versions: newVersions
-        }
-      })
-    )
-  }
-
   const handleRestoreVersion = (promptId: string, versionId: string) => {
-    setPrompts((prev) =>
-      prev.map((p) => {
-        if (p.id !== promptId) return p
+    const versions = Array.from(allVersions.values()).filter(v => v.promptId === promptId)
+    const version = versions.find(v => v.id === versionId)
+    if (!version) return
 
-        const version = p.versions.find(v => v.id === versionId)
-        if (!version) return p
-
-        const newVersions = [
-          {
-            id: `v${p.versions.length + 1}`,
-            content: version.content,
-            createdAt: "Just now",
-            note: `Restored from ${versionId}`
-          },
-          ...p.versions
-        ]
-
-        return {
-          ...p,
-          content: version.content,
-          updatedAt: "Just now",
-          versions: newVersions
-        }
-      })
-    )
+    updatePrompt(promptId, { content: version.content })
+    createPromptVersion({
+      promptId,
+      content: version.content,
+      note: `Restored from ${versionId}`,
+    })
   }
 
   const handleAddGroup = (group: Omit<Group, "id" | "promptCount">): string => {
-    const newId = Date.now().toString()
-    const newGroup: Group = {
-      id: newId,
+    const newGroup = createGroup({
       name: group.name,
       color: group.color,
-      promptCount: 0,
-    }
-    setGroups((prev) => [...prev, newGroup])
-    return newId
+    })
+    return newGroup.id
   }
 
   const handleEditGroup = (groupId: string, data: { name: string; color: string }) => {
-    setGroups((prev) =>
-      prev.map((g) => (g.id === groupId ? { ...g, ...data } : g))
-    )
+    updateGroup(groupId, data)
   }
 
   const handleDeleteGroup = (groupId: string) => {
-    setGroups((prev) => prev.filter((g) => g.id !== groupId))
-    setPrompts((prev) =>
-      prev.map((p) => (p.groupId === groupId ? { ...p, groupId: undefined } : p))
-    )
+    deleteGroup(groupId)
+    // Update prompts that were in this group
+    promptEntities
+      .filter((p: PromptEntity) => p.groupId === groupId)
+      .forEach((p: PromptEntity) => updatePrompt(p.id, { groupId: undefined }))
   }
 
   const handleDeletePrompt = (promptId: string) => {
-    setPrompts((prev) => prev.filter((p) => p.id !== promptId))
+    deletePrompt(promptId)
   }
 
   const handleToggleFavorite = (promptId: string) => {
-    setPrompts((prev) =>
-      prev.map((p) => (p.id === promptId ? { ...p, isFavorite: !p.isFavorite } : p))
-    )
+    const prompt = promptEntities.find((p: PromptEntity) => p.id === promptId)
+    if (prompt) {
+      updatePrompt(promptId, { isFavorite: !prompt.isFavorite })
+    }
   }
 
   const handleDuplicatePrompt = (promptId: string) => {
-    const prompt = prompts.find(p => p.id === promptId)
+    const prompt = promptEntities.find((p: PromptEntity) => p.id === promptId)
     if (!prompt) return
 
-    const now = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    const newPrompt: Prompt = {
-      id: Date.now().toString(),
+    const newPrompt = createPrompt({
       title: `${prompt.title} (Copy)`,
       content: prompt.content,
       category: prompt.category,
-      createdAt: now,
-      updatedAt: "Just now",
       isFavorite: false,
       groupId: prompt.groupId,
-      versions: [
-        {
-          id: "v1",
-          content: prompt.content,
-          createdAt: now,
-          note: `Duplicated from "${prompt.title}"`
-        }
-      ]
-    }
-    setPrompts((prev) => [newPrompt, ...prev])
+    })
+
+    createPromptVersion({
+      promptId: newPrompt.id,
+      content: prompt.content,
+      note: `Duplicated from "${prompt.title}"`,
+    })
+
     return newPrompt.id
   }
 
@@ -337,24 +250,27 @@ function App() {
     const prompt = prompts.find(p => p.id === selectedPromptId)
     if (prompt) {
       return (
-        <PromptView
-          prompt={prompt}
-          groups={groups}
-          onBack={() => setPage("home")}
-          onEdit={() => handleEditPrompt(selectedPromptId)}
-          onDuplicate={() => {
-            const newId = handleDuplicatePrompt(selectedPromptId)
-            if (newId) {
-              setSelectedPromptId(newId)
-            }
-          }}
-          onRestoreVersion={(versionId) => handleRestoreVersion(selectedPromptId, versionId)}
-          onToggleFavorite={() => handleToggleFavorite(selectedPromptId)}
-          onDelete={() => {
-            handleDeletePrompt(selectedPromptId)
-            setPage("home")
-          }}
-        />
+        <>
+          <SyncStatusIndicator />
+          <PromptView
+            prompt={prompt}
+            groups={groups}
+            onBack={() => setPage("home")}
+            onEdit={() => handleEditPrompt(selectedPromptId)}
+            onDuplicate={() => {
+              const newId = handleDuplicatePrompt(selectedPromptId)
+              if (newId) {
+                setSelectedPromptId(newId)
+              }
+            }}
+            onRestoreVersion={(versionId) => handleRestoreVersion(selectedPromptId, versionId)}
+            onToggleFavorite={() => handleToggleFavorite(selectedPromptId)}
+            onDelete={() => {
+              handleDeletePrompt(selectedPromptId)
+              setPage("home")
+            }}
+          />
+        </>
       )
     }
   }
@@ -362,45 +278,51 @@ function App() {
   if (page === "prompt-editor") {
     const editingPrompt = editingPromptId ? prompts.find(p => p.id === editingPromptId) : null
     return (
-      <PromptEditor
-        onBack={() => {
-          if (editingPromptId) {
-            setSelectedPromptId(editingPromptId)
-            setEditingPromptId(null)
-            setPage("view-prompt")
-          } else {
-            setPage("home")
-          }
-        }}
-        onSave={handleSavePrompt}
-        onAddGroup={handleAddGroup}
-        groups={groups}
-        existingPrompt={editingPrompt ? {
-          id: editingPrompt.id,
-          title: editingPrompt.title,
-          content: editingPrompt.content,
-          groupId: editingPrompt.groupId
-        } : null}
-      />
+      <>
+        <SyncStatusIndicator />
+        <PromptEditor
+          onBack={() => {
+            if (editingPromptId) {
+              setSelectedPromptId(editingPromptId)
+              setEditingPromptId(null)
+              setPage("view-prompt")
+            } else {
+              setPage("home")
+            }
+          }}
+          onSave={handleSavePrompt}
+          onAddGroup={handleAddGroup}
+          groups={groups}
+          existingPrompt={editingPrompt ? {
+            id: editingPrompt.id,
+            title: editingPrompt.title,
+            content: editingPrompt.content,
+            groupId: editingPrompt.groupId
+          } : null}
+        />
+      </>
     )
   }
 
   if (page === "home") {
     return (
-      <Home
-        onLogout={handleLogout}
-        userName={userName}
-        onNewPrompt={handleNewPrompt}
-        onViewPrompt={handleViewPrompt}
-        onEditPrompt={handleEditPrompt}
-        onDuplicatePrompt={handleDuplicatePrompt}
-        prompts={prompts}
-        groups={groups}
-        onAddGroup={handleAddGroup}
-        onEditGroup={handleEditGroup}
-        onDeleteGroup={handleDeleteGroup}
-        onDeletePrompt={handleDeletePrompt}
-      />
+      <>
+        <SyncStatusIndicator />
+        <Home
+          onLogout={handleLogout}
+          userName={userName}
+          onNewPrompt={handleNewPrompt}
+          onViewPrompt={handleViewPrompt}
+          onEditPrompt={handleEditPrompt}
+          onDuplicatePrompt={handleDuplicatePrompt}
+          prompts={prompts}
+          groups={groups}
+          onAddGroup={handleAddGroup}
+          onEditGroup={handleEditGroup}
+          onDeleteGroup={handleDeleteGroup}
+          onDeletePrompt={handleDeletePrompt}
+        />
+      </>
     )
   }
 
@@ -408,7 +330,7 @@ function App() {
     return (
       <SignUp
         onNavigateToLogin={() => setPage("login")}
-        onSignUp={handleSignUp}
+        onSignUp={() => setPage("home")}
       />
     )
   }
@@ -416,9 +338,27 @@ function App() {
   return (
     <Login
       onNavigateToSignUp={() => setPage("signup")}
-      onLogin={handleLogin}
+      onLogin={() => setPage("home")}
     />
   )
+}
+
+function App() {
+  // Initialize sync engine - this hydrates from IndexedDB and starts syncing
+  const { isHydrated } = useSyncEngine()
+
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen bg-[var(--bg-main)] flex items-center justify-center">
+        <div className="text-center">
+          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-brand-primary to-brand-secondary mx-auto mb-4 animate-pulse" />
+          <p className="text-sm text-[var(--text-secondary)]">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  return <AppContent />
 }
 
 export default App
