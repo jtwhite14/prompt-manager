@@ -209,8 +209,8 @@ export interface SyncState {
  * Configuration options for the sync engine
  */
 export interface SyncEngineConfig {
-  /** API base URL */
-  apiBaseUrl: string
+  /** API base URL (null for offline-only mode) */
+  apiBaseUrl: string | null
   /** Polling interval in milliseconds (default: 5000) */
   pollInterval: number
   /** Maximum retry attempts for failed mutations (default: 5) */

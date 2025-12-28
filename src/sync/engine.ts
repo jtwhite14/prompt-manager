@@ -25,8 +25,17 @@ import type {
 // Default Configuration
 // =============================================================================
 
+// Determine API URL based on environment
+const getApiBaseUrl = () => {
+  // In production without a backend, we'll work in offline-only mode
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+    return null // No backend in production demo
+  }
+  return 'http://localhost:3001/api'
+}
+
 const DEFAULT_CONFIG: SyncEngineConfig = {
-  apiBaseUrl: 'http://localhost:3001/api',
+  apiBaseUrl: getApiBaseUrl(),
   pollInterval: 5000, // 5 seconds
   maxRetries: 5,
   retryBackoff: 2,
@@ -137,6 +146,12 @@ export class SyncEngine {
    * Pull changes from the server
    */
   async sync(): Promise<void> {
+    // Skip sync if no API URL configured (offline-only mode)
+    if (!this.config.apiBaseUrl) {
+      this.updateStatus('idle')
+      return
+    }
+
     if (!navigator.onLine) {
       this.updateStatus('offline')
       return
@@ -203,6 +218,9 @@ export class SyncEngine {
    * Push pending mutations to the server
    */
   async push(): Promise<void> {
+    // Skip push if no API URL configured (offline-only mode)
+    if (!this.config.apiBaseUrl) return
+
     if (this.isPushing || !navigator.onLine) return
 
     const pendingMutations = await db.getPendingMutations()
