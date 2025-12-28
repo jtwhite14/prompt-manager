@@ -90,7 +90,7 @@ function formatRelativeTime(isoDate: string): string {
 }
 
 function AppContent() {
-  const [page, setPage] = useState<Page>("home") // Start at home since we're using local-first
+  const [page, setPage] = useState<Page>("login")
   const [userName] = useState("John Doe")
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null)
   const [editingPromptId, setEditingPromptId] = useState<string | null>(null)
