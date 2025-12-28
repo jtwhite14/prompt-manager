@@ -68,18 +68,26 @@ export class SyncEngine {
    * Initialize the sync engine
    */
   async init(): Promise<void> {
-    // Get or create client ID
-    const metadata = await db.getSyncMetadata()
-    if (metadata?.clientId) {
-      this.config.clientId = metadata.clientId
-    } else {
+    try {
+      // Get or create client ID
+      const metadata = await db.getSyncMetadata()
+      if (metadata?.clientId) {
+        this.config.clientId = metadata.clientId
+      } else {
+        this.config.clientId = crypto.randomUUID()
+        await db.updateSyncMetadata({ clientId: this.config.clientId })
+      }
+    } catch (error) {
+      // If IndexedDB fails, use a temporary client ID
+      console.warn('[SyncEngine] Failed to get/set client ID:', error)
       this.config.clientId = crypto.randomUUID()
-      await db.updateSyncMetadata({ clientId: this.config.clientId })
     }
 
     // Set up online/offline listeners
-    window.addEventListener('online', this.handleOnline)
-    window.addEventListener('offline', this.handleOffline)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', this.handleOnline)
+      window.addEventListener('offline', this.handleOffline)
+    }
 
     // Update initial online state
     this.updateStatus(navigator.onLine ? 'idle' : 'offline')

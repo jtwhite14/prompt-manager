@@ -26,24 +26,34 @@ export function useSyncEngine(
     isInitialized.current = true
 
     async function init() {
-      // First, hydrate the store from IndexedDB
-      await hydrateFromIndexedDB()
+      try {
+        // First, hydrate the store from IndexedDB
+        await hydrateFromIndexedDB()
 
-      // Then initialize and start the sync engine
-      const engine = initSyncEngine(config, events)
-      await engine.init()
-      engine.start()
+        // Then initialize and start the sync engine
+        const engine = initSyncEngine(config, events)
+        await engine.init()
+        engine.start()
 
-      console.log('[useSyncEngine] Initialized and started')
+        console.log('[useSyncEngine] Initialized and started')
+      } catch (error) {
+        console.error('[useSyncEngine] Failed to initialize:', error)
+        // Ensure the app can still function by marking as hydrated
+        useStore.setState({ isHydrated: true })
+      }
     }
 
     init()
 
     // Cleanup on unmount
     return () => {
-      const engine = getSyncEngine()
-      engine.destroy()
-      console.log('[useSyncEngine] Destroyed')
+      try {
+        const engine = getSyncEngine()
+        engine.destroy()
+        console.log('[useSyncEngine] Destroyed')
+      } catch {
+        // Ignore cleanup errors
+      }
     }
   }, []) // Empty deps - only run once
 
